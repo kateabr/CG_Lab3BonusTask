@@ -156,7 +156,7 @@ void PaintCanvas::colorFill(QPoint curPos)
 
     for (int i = minBound; i <= maxBound; ++i) {
         QPoint start(pointsToFill[i].first + 1, i);
-        while ((start.x() < pixmapImg.width()) && (notBorder(start) || (start.x() != pointsToFill[i].second))) {
+        while (start.x() != pointsToFill[i].second) {
             pixmapImg.setPixelColor(start, color);
             start.setX(start.x() + 1);
         }
