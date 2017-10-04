@@ -128,8 +128,7 @@ void PaintCanvas::deleteRedundantPoints(QVector<QPoint> &borderPoints) {
                          borderPoints[(i + 2) % bpsize]};
       std::sort(ps.begin(), ps.end(),
                 [](QPoint &x, QPoint &y) { return x.x() < y.x(); });
-
-      if (pixmapImg.pixelColor(QPoint(ps[1].x() + 1, ps[1].y())) == bgColor) {
+      if (notNeededPoint(ps[0], ps[1])) {
         res.push_back(ps[1]);
         res.push_back(ps[2]);
       } else {
@@ -137,6 +136,21 @@ void PaintCanvas::deleteRedundantPoints(QVector<QPoint> &borderPoints) {
         res.push_back(ps[1]);
       }
       i += 3;
+    } else if ((res.size() > 1) &&
+               (borderPoints[i].y() == res[res.size() - 1].y()) &&
+               (borderPoints[i].y() == res[res.size() - 2].y())) {
+      QVector<QPoint> ps{borderPoints[i], res[res.size() - 1],
+                         res[res.size() - 2]};
+      std::sort(ps.begin(), ps.end(),
+                [](QPoint &x, QPoint &y) { return x.x() < y.x(); });
+      if (notNeededPoint(ps[0], ps[1])) {
+        res[res.size() - 2].setX(ps[1].x());
+        res[res.size() - 1].setX(ps[2].x());
+      } else {
+        res[res.size() - 2].setX(ps[0].x());
+        res[res.size() - 1].setX(ps[1].x());
+      }
+      ++i;
     } else {
       res.push_back(borderPoints[i]);
       ++i;
@@ -150,67 +164,68 @@ QQueue<QPair<QPoint, QPoint>>
 PaintCanvas::getPointsToConnect(QVector<QPoint> &borderPoints) {
   QQueue<QPair<QPoint, QPoint>> pointsToConnect;
   int ind = 0;
+
   borderPoints.pop_back();
   borderPoints.pop_back();
   borderPoints.pop_front();
   borderPoints.pop_front();
+  QPoint border;
   while (!borderPoints.empty()) {
-    curPos = borderPoints[ind];
-    bool moveRight = notBorder(QPoint(curPos.x() + 1, curPos.y())) ||
-                     borderPoints.contains(QPoint(curPos.x() + 1, curPos.y()));
-    if (moveRight) {
-      borderPoints.erase(borderPoints.begin() + ind);
-      ind = 0;
-    } else {
-      ind = (ind + 1) % borderPoints.size();
-      continue;
-    }
-    QPoint border = getRightEnd(curPos);
+    curPos = borderPoints[ind].x() < borderPoints[ind + 1].x()
+                 ? borderPoints[ind]
+                 : borderPoints[ind + 1];
+    border = getRightEnd(curPos);
     auto found = borderPoints.begin();
     if ((found = std::find(borderPoints.begin(), borderPoints.end(), border)) !=
         borderPoints.end()) {
       pointsToConnect.push_back(QPair<QPoint, QPoint>(curPos, border));
-      borderPoints.erase(found);
+      if (found - (borderPoints.begin() + ind) > 0) {
+        borderPoints.erase(found);
+        borderPoints.erase(borderPoints.begin() + ind);
+      } else {
+        borderPoints.erase(borderPoints.begin() + ind);
+        borderPoints.erase(found);
+      }
     } else {
-      QVector<QPoint> obstacleBorderPoints = getBorderPoints(curPos, 4);
+      QVector<QPoint> obstacleBorderPoints = getBorderPoints(border, 4);
 
-      int sz = obstacleBorderPoints.size();
-      for (int i = 0; i < sz; ++i) {
-        QPoint curObstPos = *obstacleBorderPoints.begin();
-        bool moveLeft = notBorder(QPoint(curObstPos.x() - 1, curObstPos.y())) ||
-                        obstacleBorderPoints.contains(
-                            QPoint(curObstPos.x() - 1, curObstPos.y()));
-        if (moveLeft) {
-          obstacleBorderPoints.erase(borderPoints.begin());
-        } else
-          continue;
+      int obstInd = 0;
+      QPoint curObstPos;
+      bool incInd = false;
+      while (obstInd < obstacleBorderPoints.size()) {
+        if (obstacleBorderPoints[obstInd].x() <
+            obstacleBorderPoints[obstInd + 1].x()) {
+          curObstPos = obstacleBorderPoints[obstInd];
+          incInd = true;
+        } else {
+          curObstPos = obstacleBorderPoints[obstInd + 1];
+          ++obstInd;
+          incInd = false;
+        }
         if ((found = std::find(borderPoints.begin(), borderPoints.end(),
                                getLeftEnd(curObstPos))) != borderPoints.end()) {
           pointsToConnect.push_back(QPair<QPoint, QPoint>(*found, curObstPos));
           borderPoints.erase(found);
-        } else if ((found = std::find(borderPoints.begin(), borderPoints.end(),
-                                      getRightEnd(curObstPos))) !=
-                   borderPoints.end()) {
-          pointsToConnect.push_back(QPair<QPoint, QPoint>(curObstPos, *found));
-          borderPoints.erase(found);
-        } else if ((found = std::find(obstacleBorderPoints.begin(),
-                                      obstacleBorderPoints.end(),
-                                      getLeftEnd(curObstPos))) !=
-                   obstacleBorderPoints.end()) {
+          obstacleBorderPoints.erase(obstacleBorderPoints.begin() + obstInd);
+        }
+
+        else if ((found = std::find(
+                      obstacleBorderPoints.begin(), obstacleBorderPoints.end(),
+                      getRightEnd(curObstPos))) != obstacleBorderPoints.end()) {
           pointsToConnect.push_back(QPair<QPoint, QPoint>(*found, curObstPos));
           obstacleBorderPoints.erase(found);
-        } else if ((found = std::find(obstacleBorderPoints.begin(),
-                                      obstacleBorderPoints.end(),
-                                      getRightEnd(curObstPos))) !=
-                   obstacleBorderPoints.end()) {
-          pointsToConnect.push_back(QPair<QPoint, QPoint>(curObstPos, *found));
-          obstacleBorderPoints.erase(found);
+          obstacleBorderPoints.erase(obstacleBorderPoints.begin() + obstInd);
         }
+        if (incInd)
+          ++obstInd;
       }
+
       while (!obstacleBorderPoints.empty()) {
-        borderPoints.push_back(*obstacleBorderPoints.begin());
+        borderPoints.push_back(obstacleBorderPoints[0]);
         obstacleBorderPoints.erase(obstacleBorderPoints.begin());
       }
+      std::sort(borderPoints.begin(), borderPoints.end(),
+                [](QPoint &x, QPoint &y) { return x.y() > y.y(); });
     }
   }
 
@@ -218,6 +233,10 @@ PaintCanvas::getPointsToConnect(QVector<QPoint> &borderPoints) {
 }
 
 QPoint PaintCanvas::getRightEnd(QPoint from) {
+  while (pixmapImg.pixelColor(from) ==
+         pixmapImg.pixelColor(QPoint(from.x() + 1, from.y()))) {
+    from.setX(from.x() + 1);
+  }
   do {
     from.setX(from.x() + 1);
   } while (notBorder(from) && from.x() < pixmap.width() - 1);
@@ -225,6 +244,10 @@ QPoint PaintCanvas::getRightEnd(QPoint from) {
 }
 
 QPoint PaintCanvas::getLeftEnd(QPoint from) {
+  while (pixmapImg.pixelColor(from) ==
+         pixmapImg.pixelColor(QPoint(from.x() - 1, from.y()))) {
+    from.setX(from.x() - 1);
+  }
   do {
     from.setX(from.x() - 1);
   } while (notBorder(from) && from.x() > 0);
@@ -243,6 +266,16 @@ QPoint PaintCanvas::skipSpaceLeft(QPoint p) {
          pixmapImg.pixelColor(QPoint(p.x() - 1, p.y())))
     p.setX(p.x() + 1);
   return p;
+}
+
+bool PaintCanvas::notNeededPoint(QPoint first, QPoint second) {
+  while (pixmapImg.pixelColor(QPoint(first.x() + 1, first.y())) ==
+         pixmapImg.pixelColor(first)) {
+    first.setX(first.x() + 1);
+    if (first == second)
+      return true;
+  }
+  return false;
 }
 
 QVector<QPoint> PaintCanvas::getBorderPoints(QPoint curPos, int direction) {
@@ -309,7 +342,8 @@ bgColor)) right.setX(right.x() + 1); while ((left.x() - 1 >= 0) &&
         for (QPoint p = left; p != right; p.setX(p.x() + 1)) {
             temp.setPixelColor(p, color);
             if ((p.y() + 1 < temp.height()) && (temp.pixelColor(p.x(), p.y() +
-1) == bgColor)) pointsToFill.push_back(QPoint(p.x(), p.y() + 1)); if ((p.y() - 1
+1) == bgColor)) pointsToFill.push_back(QPoint(p.x(), p.y() + 1)); if ((p.y() -
+1
 >= 0) && (temp.pixelColor(p.x(), p.y() - 1) == bgColor))
                 pointsToFill.push_back(QPoint(p.x(), p.y() - 1));
         }
@@ -345,8 +379,8 @@ bgColor)) right.setX(right.x() + 1); while ((left.x() - 1 >= 0) &&
             while (newY < 0)
                 newY += pattern.height();
             QColor c = pattern.pixelColor(newX % pattern.width(), newY %
-pattern.height()); temp.setPixelColor(p, c); if ((p.y() + 1 < temp.height()) &&
-(temp.pixelColor(p.x(), p.y() + 1) == bgColor))
+pattern.height()); temp.setPixelColor(p, c); if ((p.y() + 1 < temp.height())
+&& (temp.pixelColor(p.x(), p.y() + 1) == bgColor))
                 pointsToFill.push_back(QPoint(p.x(), p.y() + 1));
             if ((p.y() - 1 >= 0) && (temp.pixelColor(p.x(), p.y() - 1) ==
 bgColor)) pointsToFill.push_back(QPoint(p.x(), p.y() - 1));

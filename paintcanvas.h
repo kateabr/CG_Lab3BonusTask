@@ -47,6 +47,7 @@ private:
   QPoint getLeftEnd(QPoint from);
   QPoint skipSpaceRight(QPoint p);
   QPoint skipSpaceLeft(QPoint p);
+  bool notNeededPoint(QPoint first, QPoint second);
 };
 
 #endif // PAINTCANVAS_H
