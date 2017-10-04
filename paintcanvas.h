@@ -39,6 +39,12 @@ private:
     bool patternLoaded;
     bool notBorder(QPoint p);
     QPair<QPoint, int> nextPoint(QPoint from, int dirToCheckFirst);
+    QSet<QPoint> getBorderPoints(QPoint cur, int direction);
+    void deleteRedundantPoints(QQueue<QPoint>& borderPoints);
+    QQueue<QPair<QPoint, QPoint>> getPointsToConnect(QSet<QPoint> borderPoints);
+    void connectObstaclePoints(QSet<QPoint>& originalPoints, QSet<QPoint>& obstaclePoints);
+    QPoint getRightEnd(QPoint from);
+    QPoint getLeftEnd(QPoint from);
 };
 
 #endif // PAINTCANVAS_H

@@ -118,6 +118,102 @@ QPair<QPoint, int> PaintCanvas::nextPoint(QPoint from, int dirToCheckFirst)
                 (i + dirToCheckFirst + 6) % 8);
 }
 
+void PaintCanvas::deleteRedundantPoints(QQueue<QPoint>& borderPoints)
+{
+    int bpsize = borderPoints.size();
+
+    for (int i = 0; i < bpsize; ++i) {
+        if ((borderPoints[i].y() > borderPoints[(i + 1) % bpsize].y()) && (borderPoints[i].y() > borderPoints[(i - 1 + bpsize) % bpsize].y()))
+            borderPoints.erase(borderPoints.begin() + i, borderPoints.begin() + i + 1);
+        else if ((borderPoints[i].y() < borderPoints[(i + 1) % bpsize].y()) && (borderPoints[i].y() < borderPoints[(i - 1 + bpsize) % bpsize].y()))
+            borderPoints.erase(borderPoints.begin() + i, borderPoints.begin() + i + 1);
+        else if ((borderPoints[i].y() == borderPoints[(i + 1) % bpsize].y()) && (borderPoints[i].y() == borderPoints[(i - 1 + bpsize) % bpsize].y()))
+            borderPoints.erase(borderPoints.begin() + i, borderPoints.begin() + i + 1);
+    }
+}
+
+QQueue<QPair<QPoint, QPoint>> PaintCanvas::getPointsToConnect(QSet<QPoint> borderPoints)
+{
+    QQueue<QPair<QPoint, QPoint>> pointsToConnect;
+    while (!borderPoints.empty()) {
+        curPos = *borderPoints.begin();
+        bool moveRight = notBorder(QPoint(curPos.x() + 1, curPos.y())) || borderPoints.contains(QPoint(curPos.x() + 1, curPos.y()));
+        if (moveRight) {
+            borderPoints.erase(borderPoints.begin());
+        } else
+            continue;
+        QPoint border = getRightEnd(curPos);
+        auto found = borderPoints.begin();
+        if ((found = borderPoints.find(border)) != borderPoints.end()) {
+            pointsToConnect.push_back(QPair<QPoint, QPoint>(curPos, border));
+            borderPoints.erase(found);
+        } else {
+            QSet<QPoint> obstacleBorderPoints = getBorderPoints(curPos, 4);
+
+            int sz = obstacleBorderPoints.size();
+            for (int i = 0; i < sz; ++i) {
+                QPoint curObstPos = *obstacleBorderPoints.begin();
+                bool moveLeft = notBorder(QPoint(curObstPos.x() - 1, curObstPos.y())) || obstacleBorderPoints.contains(QPoint(curObstPos.x() - 1, curObstPos.y()));
+                if (moveLeft) {
+                    obstacleBorderPoints.erase(borderPoints.begin());
+                } else
+                    continue;
+                if ((found = borderPoints.find(getLeftEnd(curObstPos))) != borderPoints.end()) {
+                    pointsToConnect.push_back(QPair<QPoint, QPoint>(*found, curObstPos));
+                    borderPoints.erase(found);
+                } else if ((found = borderPoints.find(getRightEnd(curObstPos))) != borderPoints.end()) {
+                    pointsToConnect.push_back(QPair<QPoint, QPoint>(curObstPos, *found));
+                    borderPoints.erase(found);
+                } else if ((found = obstacleBorderPoints.find(getLeftEnd(curObstPos))) != obstacleBorderPoints.end()) {
+                    pointsToConnect.push_back(QPair<QPoint, QPoint>(*found, curObstPos));
+                    obstacleBorderPoints.erase(found);
+                } else if ((found = obstacleBorderPoints.find(getRightEnd(curObstPos))) != obstacleBorderPoints.end()) {
+                    pointsToConnect.push_back(QPair<QPoint, QPoint>(curObstPos, *found));
+                    obstacleBorderPoints.erase(found);
+                }
+            }
+            while (!obstacleBorderPoints.empty()) {
+                borderPoints.insert(*obstacleBorderPoints.begin());
+                obstacleBorderPoints.erase(obstacleBorderPoints.begin());
+            }
+        }
+    }
+
+    return pointsToConnect;
+}
+
+QPoint PaintCanvas::getRightEnd(QPoint from)
+{
+    do {
+        from.setX(from.x() + 1);
+    } while (notBorder(from));
+    return from;
+}
+
+QPoint PaintCanvas::getLeftEnd(QPoint from)
+{
+    do {
+        from.setX(from.x() - 1);
+    } while (notBorder(from));
+    return from;
+}
+
+QSet<QPoint> PaintCanvas::getBorderPoints(QPoint curPos, int direction)
+{
+    QQueue<QPoint> res;
+    res.push_back(curPos);
+
+    QPair<QPoint, int> advance = nextPoint(curPos, direction);
+    while (advance.first != curPos) {
+        res.push_back(advance.first);
+        advance = nextPoint(advance.first, advance.second);
+    }
+
+    deleteRedundantPoints(res);
+
+    return res.toSet();
+}
+
 void PaintCanvas::colorFill(QPoint curPos)
 {
     pixmapImg = pixmap.toImage();
@@ -128,38 +224,18 @@ void PaintCanvas::colorFill(QPoint curPos)
     while (notBorder(curPos) && (curPos.x() > 0))
         curPos.setX(curPos.x() - 1);
 
-    QMap<int, QPair<int, int>> pointsToFill;
-    int minBound = pixmapImg.height();
-    int maxBound = 0;
-    ;
-    pointsToFill[curPos.y()] = QPair<int, int>(curPos.x(), -1);
-    QPair<QPoint, int> advance = nextPoint(curPos, 0);
-    while (advance.first != curPos) {
-        if (!pointsToFill.contains(advance.first.y()))
-            pointsToFill[advance.first.y()] = QPair<int, int>(advance.first.x(), -1);
-        else {
-            if (pointsToFill[advance.first.y()].first > advance.first.x()) {
-                pointsToFill[advance.first.y()].second = qMax(pointsToFill[advance.first.y()].second, pointsToFill[advance.first.y()].first);
-                pointsToFill[advance.first.y()].first = advance.first.x();
-            } else if (pointsToFill[advance.first.y()].second < advance.first.x())
-                pointsToFill[advance.first.y()].second = advance.first.x();
-            //if ((pointsToFill[advance.first.y()].second != -1) && (pointsToFill[advance.first.y()].first > pointsToFill[advance.first.y()].second))
-            //    std::swap(pointsToFill[advance.first.y()].first,
-            //        pointsToFill[advance.first.y()].second);
-        }
-        if (advance.first.y() < minBound)
-            minBound = advance.first.y();
-        if (advance.first.y() > maxBound)
-            maxBound = advance.first.y();
-        advance = nextPoint(advance.first, advance.second);
-    }
+    QSet<QPoint> borderPoints = getBorderPoints(curPos, 0);
+    QQueue<QPair<QPoint, QPoint>> pointsToConnect = getPointsToConnect(borderPoints);
 
-    for (int i = minBound; i <= maxBound; ++i) {
-        QPoint start(pointsToFill[i].first + 1, i);
-        while (start.x() != pointsToFill[i].second) {
-            pixmapImg.setPixelColor(start, color);
-            start.setX(start.x() + 1);
-        }
+    while (!pointsToConnect.empty()) {
+        QPair<QPoint, QPoint> cur = pointsToConnect.takeFirst();
+        pointsToConnect.pop_front();
+
+        QPoint from = cur.first;
+        do {
+            pixmapImg.setPixelColor(from, color);
+            from.setX(from.x() + 1);
+        } while (from != cur.second);
     }
 
     pixmap = QPixmap::fromImage(pixmapImg);
